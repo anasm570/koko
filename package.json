@@ -1,0 +1,13 @@
+{
+  "name": "timer-game-server",
+  "version": "1.0.0",
+  "description": "WebSocket server for two-player timer game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}
