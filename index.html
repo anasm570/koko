@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>⏱️ توقف التايمر – أونلاين ثنائي</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body {
+            background: linear-gradient(145deg, #0f172a, #1e293b);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Cairo', 'Poppins', sans-serif;
+            padding: 15px;
+        }
+        .game-container {
+            max-width: 700px;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(12px);
+            border-radius: 56px;
+            padding: 24px 20px;
+            border: 1px solid #ffcc88;
+            box-shadow: 0 20px 35px rgba(0,0,0,0.5);
+        }
+        h1 { text-align: center; color: #ffdd99; font-size: 1.8rem; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        .players-panel { display: flex; gap: 20px; flex-wrap: wrap; margin: 20px 0; }
+        .player-card {
+            flex: 1; background: #1e293b; border-radius: 48px; padding: 15px; text-align: center;
+            border: 2px solid #475569; transition: 0.1s;
+        }
+        .player-card.active-turn { border-color: #facc15; background: #2d3a4e; box-shadow: 0 0 15px rgba(250,204,21,0.4); }
+        .player-name { font-size: 1.5rem; font-weight: bold; color: #facc15; }
+        .player-score { font-size: 2rem; font-weight: bold; color: #ffffff; margin: 8px 0; }
+        .player-attempt { font-size: 1rem; color: #94a3b8; }
+        .timer-area { background: #00000066; border-radius: 60px; padding: 20px; text-align: center; margin: 20px 0; }
+        .timer-display { font-size: 4rem; font-weight: bold; font-family: monospace; color: #88ffaa; text-shadow: 0 0 10px #88ffaa; letter-spacing: 4px; }
+        .target-info { font-size: 1.1rem; color: #ffdd99; margin-top: 8px; }
+        .buttons { display: flex; gap: 15px; justify-content: center; margin: 20px 0 10px; }
+        button {
+            background: #f97316; border: none; padding: 12px 24px; border-radius: 60px;
+            font-weight: bold; font-size: 1rem; color: white; cursor: pointer; transition: 0.1s; flex: 1;
+        }
+        button:active { transform: scale(0.96); }
+        .stop-btn { background: #dc2626; }
+        .reset-btn { background: #3b82f6; }
+        .next-round-btn { background: #2c6e4b; }
+        .message-area { background: #00000066; border-radius: 40px; padding: 12px; text-align: center; margin: 15px 0; font-weight: bold; color: #e2e8f0; }
+        .room-panel { background: #1e293b; border-radius: 48px; padding: 15px; margin-bottom: 20px; text-align: center; }
+        .room-panel input, .room-panel button { padding: 10px; border-radius: 40px; border: none; margin: 5px; }
+        .room-panel input { background: #0f172a; color: white; width: 60%; }
+        .room-panel button { background: #2c6e4b; color: white; cursor: pointer; }
+        footer { text-align: center; font-size: 0.7rem; color: #88aacc; margin-top: 20px; }
+        @media (max-width: 550px) {
+            .timer-display { font-size: 2.5rem; }
+            .player-name { font-size: 1.2rem; }
+            .player-score { font-size: 1.5rem; }
+            button { padding: 8px 16px; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <h1>⏱️ توقف التايمر <span style="font-size:0.9rem;">(أونلاين ثنائي)</span></h1>
+
+    <div class="room-panel">
+        <div id="connectionStatus">🔌 جاري الاتصال بالسيرفر...</div>
+        <input type="text" id="roomId" placeholder="رمز الغرفة (مثال: room123)">
+        <button id="joinBtn">انضم للغرفة</button>
+        <button id="createBtn">إنشاء غرفة جديدة</button>
+        <div id="roomInfo" style="margin-top:8px; font-size:0.8rem;"></div>
+    </div>
+
+    <div class="players-panel">
+        <div class="player-card" id="player1Card">
+            <div class="player-name">👨‍🍳 أنت</div>
+            <div class="player-score" id="player1Score">0</div>
+            <div class="player-attempt" id="player1Attempt">— ثانية</div>
+        </div>
+        <div class="player-card" id="player2Card">
+            <div class="player-name">👩‍🍳 الخصم</div>
+            <div class="player-score" id="player2Score">0</div>
+            <div class="player-attempt" id="player2Attempt">— ثانية</div>
+        </div>
+    </div>
+
+    <div class="timer-area">
+        <div class="timer-display" id="timerDisplay">0.00</div>
+        <div class="target-info">🎯 الهدف: <span id="targetValue">0.00</span> ثانية</div>
+    </div>
+
+    <div class="buttons">
+        <button id="startBtn" disabled>▶️ ابدأ التايمر</button>
+        <button id="stopBtn" class="stop-btn" disabled>⏹️ أوقف التايمر</button>
+    </div>
+    <div class="buttons">
+        <button id="resetRoundBtn" class="reset-btn" disabled>🔄 إعادة الجولة</button>
+        <button id="nextRoundBtn" class="next-round-btn" disabled>⭐ الجولة التالية</button>
+    </div>
+
+    <div class="message-area" id="messageBox">
+        ✨ أنشئ غرفة أو انضم إلى غرفة موجودة وانتظر اللاعب الآخر ✨
+    </div>
+    <footer>🔹 كل لاعب لديه دور واحد لكل جولة | الأقرب للهدف يكسب نقطة</footer>
+</div>
+
+<script>
+    // اتصال بالسيرفر (سيتم تعيين الرابط لاحقاً – يجب استبداله برابط السيرفر بعد النشر)
+    const SERVER_URL = "https://your-backend.onrender.com"; // ⚠️ ضع رابط السيرفر هنا بعد نشره
+    let socket = null;
+    let roomId = null;
+    let myPlayerId = null;       // "player1" أو "player2"
+    let gameState = {
+        players: [{ score: 0, attempt: null }, { score: 0, attempt: null }],
+        currentTurn: 0,
+        targetTime: 0,
+        roundActive: false,
+        timerRunning: false,
+        elapsed: 0,
+        timerInterval: null
+    };
+    let isMyTurn = false;
+
+    // عناصر DOM
+    const p1Score = document.getElementById('player1Score');
+    const p2Score = document.getElementById('player2Score');
+    const p1Attempt = document.getElementById('player1Attempt');
+    const p2Attempt = document.getElementById('player2Attempt');
+    const p1Card = document.getElementById('player1Card');
+    const p2Card = document.getElementById('player2Card');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const targetValueSpan = document.getElementById('targetValue');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const resetRoundBtn = document.getElementById('resetRoundBtn');
+    const nextRoundBtn = document.getElementById('nextRoundBtn');
+    const messageBox = document.getElementById('messageBox');
+    const connectionStatus = document.getElementById('connectionStatus');
+    const roomInfoDiv = document.getElementById('roomInfo');
+    const roomIdInput = document.getElementById('roomId');
+    const joinBtn = document.getElementById('joinBtn');
+    const createBtn = document.getElementById('createBtn');
+
+    function updateUI() {
+        p1Score.innerText = gameState.players[0].score;
+        p2Score.innerText = gameState.players[1].score;
+        p1Attempt.innerText = gameState.players[0].attempt !== null ? `${gameState.players[0].attempt.toFixed(2)} ثانية` : '— ثانية';
+        p2Attempt.innerText = gameState.players[1].attempt !== null ? `${gameState.players[1].attempt.toFixed(2)} ثانية` : '— ثانية';
+        targetValueSpan.innerText = gameState.targetTime.toFixed(2);
+        timerDisplay.innerText = gameState.elapsed.toFixed(2);
+        // تحديث البطاقات
+        if (gameState.roundActive && gameState.currentTurn === 0 && myPlayerId === 'player1') isMyTurn = true;
+        else if (gameState.roundActive && gameState.currentTurn === 1 && myPlayerId === 'player2') isMyTurn = true;
+        else isMyTurn = false;
+        if (gameState.roundActive && !gameState.players[gameState.currentTurn].hasPlayed) {
+            if (myPlayerId === 'player1') p1Card.classList.toggle('active-turn', gameState.currentTurn === 0);
+            else p1Card.classList.toggle('active-turn', false);
+            if (myPlayerId === 'player2') p2Card.classList.toggle('active-turn', gameState.currentTurn === 1);
+            else p2Card.classList.toggle('active-turn', false);
+        } else {
+            p1Card.classList.remove('active-turn');
+            p2Card.classList.remove('active-turn');
+        }
+        startBtn.disabled = !(isMyTurn && gameState.roundActive && !gameState.players[gameState.currentTurn].hasPlayed && !gameState.timerRunning);
+        stopBtn.disabled = !(isMyTurn && gameState.timerRunning);
+        resetRoundBtn.disabled = !gameState.roundActive;
+        nextRoundBtn.disabled = gameState.roundActive;
+    }
+
+    function startLocalTimer() {
+        if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+        gameState.timerRunning = true;
+        gameState.elapsed = 0;
+        timerDisplay.innerText = "0.00";
+        gameState.timerInterval = setInterval(() => {
+            if (gameState.timerRunning) {
+                gameState.elapsed += 0.01;
+                timerDisplay.innerText = gameState.elapsed.toFixed(2);
+            }
+        }, 10);
+        updateUI();
+    }
+
+    function stopLocalTimer() {
+        if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+        gameState.timerInterval = null;
+        gameState.timerRunning = false;
+        updateUI();
+    }
+
+    // إرسال حدث إلى السيرفر
+    function emit(event, data) {
+        if (socket) socket.emit(event, { roomId, ...data });
+    }
+
+    // معالجة أحداث السيرفر
+    function setupSocket() {
+        socket = io(SERVER_URL);
+        socket.on('connect', () => {
+            connectionStatus.innerHTML = '✅ متصل بالسيرفر';
+        });
+        socket.on('disconnect', () => {
+            connectionStatus.innerHTML = '❌ انقطع الاتصال بالسيرفر';
+            alert('انقطع الاتصال بالخادم. أعد تحميل الصفحة.');
+        });
+        socket.on('room-created', ({ roomId: rid }) => {
+            roomId = rid;
+            roomInfoDiv.innerHTML = `✅ تم إنشاء الغرفة: ${roomId}<br>شارك هذا الرمز مع صديقك.`;
+            messageBox.innerHTML = `✨ انتظر حتى ينضم الخصم إلى الغرفة...`;
+            connectionStatus.innerHTML = `🟢 في الغرفة ${roomId} (مضيف)`;
+        });
+        socket.on('room-joined', ({ roomId: rid, playerId }) => {
+            roomId = rid;
+            myPlayerId = playerId;
+            roomInfoDiv.innerHTML = `✅ انضممت إلى الغرفة ${roomId} كـ ${playerId === 'player1' ? 'اللاعب 1' : 'اللاعب 2'}`;
+            connectionStatus.innerHTML = `🟢 متصل في الغرفة ${roomId}`;
+            messageBox.innerHTML = `🎮 تم الاتصال! يبدأ اللاعب 1 الجولة.`;
+        });
+        socket.on('game-state', (state) => {
+            // تحديث حالة اللعبة من السيرفر
+            gameState = {
+                ...state,
+                timerRunning: false,
+                timerInterval: null,
+                elapsed: state.elapsed || 0
+            };
+            if (state.timerRunning && !gameState.timerInterval && myPlayerId === state.currentTurnPlayer) {
+                // بدأ التايمر بواسطة هذا اللاعب – يجب تشغيل المؤقت محلياً
+                if (state.timerRunning && !gameState.timerInterval) {
+                    startLocalTimer();
+                } else if (!state.timerRunning && gameState.timerInterval) {
+                    stopLocalTimer();
+                }
+            } else if (!state.timerRunning && gameState.timerInterval) {
+                stopLocalTimer();
+            }
+            updateUI();
+        });
+        socket.on('action-ack', ({ success, message }) => {
+            if (!success) messageBox.innerHTML = `⚠️ ${message}`;
+        });
+        socket.on('round-ended', ({ winner, scores }) => {
+            messageBox.innerHTML = `🏆 انتهت الجولة! الفائز: ${winner ? (winner === 'player1' ? 'اللاعب 1' : 'اللاعب 2') : 'تعادل'}<br>النتيجة: ${scores[0]} - ${scores[1]}`;
+            updateUI();
+        });
+        socket.on('new-round', ({ targetTime }) => {
+            messageBox.innerHTML = `🌟 جولة جديدة! الهدف: ${targetTime.toFixed(2)} ثانية. دور ${gameState.currentTurn === 0 ? 'اللاعب 1' : 'اللاعب 2'}`;
+            updateUI();
+        });
+        socket.on('error', ({ message }) => {
+            alert(`خطأ: ${message}`);
+        });
+    }
+
+    // أحداث واجهة المستخدم
+    function createRoom() {
+        const rid = roomIdInput.value.trim();
+        if (!rid) {
+            alert('الرجاء إدخال رمز للغرفة (أحرف/أرقام)');
+            return;
+        }
+        socket.emit('create-room', { roomId: rid });
+    }
+    function joinRoom() {
+        const rid = roomIdInput.value.trim();
+        if (!rid) {
+            alert('الرجاء إدخال رمز الغرفة');
+            return;
+        }
+        socket.emit('join-room', { roomId: rid });
+    }
+
+    function startTimer() {
+        if (isMyTurn && gameState.roundActive && !gameState.players[gameState.currentTurn].hasPlayed && !gameState.timerRunning) {
+            emit('start-timer', {});
+            startLocalTimer();
+        }
+    }
+    function stopTimer() {
+        if (isMyTurn && gameState.timerRunning) {
+            const stopTime = gameState.elapsed;
+            stopLocalTimer();
+            emit('stop-timer', { stopTime });
+        }
+    }
+    function resetRound() {
+        if (gameState.roundActive) {
+            emit('reset-round', {});
+        }
+    }
+    function nextRound() {
+        if (!gameState.roundActive) {
+            emit('next-round', {});
+        }
+    }
+
+    createBtn.onclick = createRoom;
+    joinBtn.onclick = joinRoom;
+    startBtn.onclick = startTimer;
+    stopBtn.onclick = stopTimer;
+    resetRoundBtn.onclick = resetRound;
+    nextRoundBtn.onclick = nextRound;
+
+    // تهيئة الاتصال
+    setupSocket();
+</script>
+</body>
+</html>
