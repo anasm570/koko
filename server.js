@@ -11,11 +11,11 @@ const io = socketIO(server, {
     }
 });
 
-// تخزين الغرف
-const rooms = new Map(); // roomId -> { player1: socketId, player2: socketId, gameState }
+// تخزين الغرف: roomId -> { player1: socketId, player2: socketId, gameState }
+const rooms = new Map();
 
 function generateRandomTarget() {
-    return Math.random() * 8 + 3; // 3.0 - 11.0
+    return Math.random() * 8 + 3; // 3.0 إلى 11.0
 }
 
 function getDefaultGameState() {
@@ -24,12 +24,11 @@ function getDefaultGameState() {
             { score: 0, attempt: null, hasPlayed: false },
             { score: 0, attempt: null, hasPlayed: false }
         ],
-        currentTurn: 0,      // 0 = player1, 1 = player2
+        currentTurn: 0,
         targetTime: generateRandomTarget(),
         roundActive: true,
         timerRunning: false,
-        elapsed: 0,
-        timerInterval: null   // لا نخزن المؤقت، فقط حالة
+        elapsed: 0
     };
 }
 
@@ -37,15 +36,13 @@ function broadcastGameState(roomId) {
     const room = rooms.get(roomId);
     if (!room) return;
     const state = room.gameState;
-    const currentTurnPlayer = state.currentTurn === 0 ? 'player1' : 'player2';
     io.to(room.player1).to(room.player2).emit('game-state', {
         players: state.players,
         currentTurn: state.currentTurn,
         targetTime: state.targetTime,
         roundActive: state.roundActive,
         timerRunning: state.timerRunning,
-        elapsed: state.elapsed,
-        currentTurnPlayer
+        elapsed: state.elapsed
     });
 }
 
@@ -85,7 +82,6 @@ function resetRound(roomId) {
     state.roundActive = true;
     state.timerRunning = false;
     state.elapsed = 0;
-    // الهدف يبقى كما هو
     broadcastGameState(roomId);
 }
 
@@ -107,7 +103,7 @@ function newRound(roomId) {
 }
 
 io.on('connection', (socket) => {
-    console.log('new client', socket.id);
+    console.log(`New client: ${socket.id}`);
 
     socket.on('create-room', ({ roomId }) => {
         if (rooms.has(roomId)) {
@@ -135,7 +131,6 @@ io.on('connection', (socket) => {
             socket.emit('error', { message: 'الغرفة ممتلئة' });
             return;
         }
-        // تحديد هوية اللاعب
         let playerId = 'player2';
         if (!room.player1) {
             room.player1 = socket.id;
@@ -146,7 +141,6 @@ io.on('connection', (socket) => {
         }
         socket.join(roomId);
         socket.emit('room-joined', { roomId, playerId });
-        // إذا اكتملت الغرفة (لاعبان)، أرسل الحالة للطرفين
         if (room.player1 && room.player2) {
             broadcastGameState(roomId);
         }
@@ -157,8 +151,8 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomId);
         if (!room) return;
         const state = room.gameState;
-        const currentPlayer = state.currentTurn === 0 ? room.player1 : room.player2;
-        if (socket.id !== currentPlayer) {
+        const currentPlayerSocket = state.currentTurn === 0 ? room.player1 : room.player2;
+        if (socket.id !== currentPlayerSocket) {
             socket.emit('action-ack', { success: false, message: 'ليس دورك' });
             return;
         }
@@ -172,7 +166,6 @@ io.on('connection', (socket) => {
         }
         state.timerRunning = true;
         state.elapsed = 0;
-        // سيتم تحديث المؤقت من العميل
         broadcastGameState(roomId);
         socket.emit('action-ack', { success: true });
     });
@@ -181,8 +174,8 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomId);
         if (!room) return;
         const state = room.gameState;
-        const currentPlayer = state.currentTurn === 0 ? room.player1 : room.player2;
-        if (socket.id !== currentPlayer) {
+        const currentPlayerSocket = state.currentTurn === 0 ? room.player1 : room.player2;
+        if (socket.id !== currentPlayerSocket) {
             socket.emit('action-ack', { success: false, message: 'ليس دورك' });
             return;
         }
@@ -194,11 +187,9 @@ io.on('connection', (socket) => {
         state.players[state.currentTurn].attempt = stopTime;
         state.players[state.currentTurn].hasPlayed = true;
         broadcastGameState(roomId);
-        // التحقق من انتهاء الجولة
         if (state.players[0].hasPlayed && state.players[1].hasPlayed) {
             endRound(roomId);
         } else {
-            // تبديل الدور
             state.currentTurn = state.currentTurn === 0 ? 1 : 0;
             broadcastGameState(roomId);
         }
@@ -218,15 +209,16 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        // تنظيف الغرف (اختياري)
+        // حذف الغرفة إذا انقطع أحد اللاعبين
         for (let [roomId, room] of rooms.entries()) {
             if (room.player1 === socket.id || room.player2 === socket.id) {
                 io.to(roomId).emit('error', { message: 'انقطع أحد اللاعبين، يتم إغلاق الغرفة' });
                 rooms.delete(roomId);
+                console.log(`Room ${roomId} deleted due to disconnect`);
                 break;
             }
         }
-        console.log('client disconnected', socket.id);
+        console.log(`Client disconnected: ${socket.id}`);
     });
 });
 
